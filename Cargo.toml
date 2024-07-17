@@ -1,6 +1,6 @@
 [package]
 name = "zed-rmate-server"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Christian W. Zuckschwerdt <christian@zuckschwerdt.org>"]
 edition = "2021"
 

@@ -1,13 +1,13 @@
 # zed-rmate-server
 
-A simple proof-of-concpet rmate server for Zed.
+A simple proof-of-concept rmate server for Zed.
 
 Handles rmate TCP connections and uses Zed with tmp files.
 
 This could be a lot more robust, feature full, safer, prettier. It could be generalized to support any editor.
 But really is just intended to be a short-term stop-gap until proper support is added in Zed.
 
-Note that error handling is a mess. There are unwraps. It will basically panic on any problem. I might clean that up later…
+Note that error handling is a mess. It will basically panic on any problem. I might clean that up later…
 
 ## Usage
 

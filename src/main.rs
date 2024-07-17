@@ -10,11 +10,12 @@ use std::path::PathBuf;
 
 use std::error::Error;
 
+mod protocol;
 mod server;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about)]
-/// A simple proof-of-concpet rmate server for Zed.
+/// A simple proof-of-concept rmate server for Zed.
 ///
 /// Handles rmate TCP connections and uses Zed with tmp files.
 struct Args {
