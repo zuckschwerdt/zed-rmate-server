@@ -222,7 +222,8 @@ impl RmateFile {
         // Send a closing newline
         stream.write_all("\n".as_bytes()).await?;
 
-        Ok(())
+        // Flush the stream to ensure data is sent
+        stream.flush().await
     }
 }
 

@@ -6,6 +6,7 @@ use tracing::{debug, error, info};
 use std::{
     error::Error,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use tokio::{
@@ -33,6 +34,7 @@ struct TmpFile {
     file_path: PathBuf,
     #[allow(unused)]
     tmp_dir: TempDir,
+    last_modified: SystemTime,
 }
 
 /// A tmp file created from an rmate request.
@@ -61,20 +63,24 @@ impl TmpFile {
         // Flush file to closed immediately when it goes out of scope
         tmp_file.flush().await?;
 
+        // Save current mtime
+        let metadata = tmp_file.metadata().await?;
+        let last_modified = metadata.modified()?;
+
         Ok(TmpFile {
             remote_file,
             file_path,
             tmp_dir,
+            last_modified,
         })
     }
 
+    async fn is_modified(&self) -> Result<bool, std::io::Error> {
+        Ok(self.file_path.metadata()?.modified()? != self.last_modified)
+    }
+
     /// Watch files and send change notify events to a channel.
-    fn watch_files<'a, T>(
-        file_paths: T,
-    ) -> Result<(impl Watcher, mpsc::Receiver<Event>), notify::Error>
-    where
-        T: Iterator<Item = &'a Path>,
-    {
+    fn create_watcher() -> Result<(impl Watcher, mpsc::Receiver<Event>), notify::Error> {
         let (tx, rx) = mpsc::channel(32);
 
         // Automatically select the best implementation for a platform.
@@ -92,11 +98,8 @@ impl TmpFile {
                 error!("file watch error: {:?}", e);
             }
         })?;
-
-        // Add the file paths to be watched
-        for p in file_paths {
-            watcher.watch(p, RecursiveMode::NonRecursive)?
-        }
+        // Set fallback watcher interval between each re-scan attempt to 2 secs.
+        watcher.configure(notify::Config::default().with_poll_interval(Duration::from_secs(2)))?;
 
         Ok((watcher, rx))
     }
@@ -134,14 +137,16 @@ impl TmpFile {
     }
 
     /// Send a local tmp file to the rmate stream.
-    async fn send_file<S>(&self, conn: &mut RmateConnection<S>) -> Result<(), std::io::Error>
+    async fn send_file<S>(&mut self, conn: &mut RmateConnection<S>) -> Result<(), std::io::Error>
     where
         S: AsyncBufRead + AsyncWrite + Unpin,
     {
         // Open tmp file
         debug!("Opening tmp file to send");
         let mut tmp_file = File::open(&self.file_path).await?;
-        let file_size = tmp_file.metadata().await?.len();
+        let metadata = tmp_file.metadata().await?;
+        let file_size = metadata.len();
+        self.last_modified = metadata.modified()?;
 
         // Send tmp file
         info!("Sending file of {file_size} bytes to remote");
@@ -199,9 +204,15 @@ async fn handle_connection(stream: TcpStream, zed_bin: PathBuf) -> Result<(), st
     sleep(Duration::from_millis(200)).await;
 
     // Watch the tmp files for changes and write each to the connection
-    let file_paths = files.iter().map(|r| r.file_path.as_path());
-    let (_watcher, mut rx) = TmpFile::watch_files(file_paths)
-        .map_err(|_| std::io::Error::other("File watcher error"))?;
+    let (mut watcher, mut rx) =
+        TmpFile::create_watcher().map_err(|_| std::io::Error::other("File watcher error"))?;
+
+    // Add the file paths to be watched
+    for file in &files {
+        watcher
+            .watch(file.file_path.as_path(), RecursiveMode::NonRecursive)
+            .map_err(|_| std::io::Error::other("File watcher error"))?;
+    }
 
     // Open the tmp files in Zed
     info!("Opening Zed");
@@ -214,7 +225,7 @@ async fn handle_connection(stream: TcpStream, zed_bin: PathBuf) -> Result<(), st
                 match event {
                     Some(Event {kind: EventKind::Modify(ModifyKind::Data(DataChange::Content)), paths, .. }) => {
                         for p in paths {
-                            if let Some(file) = files.iter().find(|f| { f.file_path == *p }) {
+                            if let Some(file) = files.iter_mut().find(|f| { f.file_path == *p }) {
                                 info!("File {:?} changed", file.remote_file.display_name);
                                 file.send_file(&mut conn).await?;
                             }
@@ -233,9 +244,18 @@ async fn handle_connection(stream: TcpStream, zed_bin: PathBuf) -> Result<(), st
                     }
                 }
             }
-            // TODO: We might need re-check files here if close is signaled before a save is detected
             status = zed.status() => {
                 debug!("Zed closed ({status:#?})");
+                // Re-check files to detected un-notified changes when close is signaled before a save is detected
+                for file in files.iter_mut() {
+                    if file.is_modified().await? {
+                        info!(
+                            "File {:?} has un-notified changes",
+                            file.remote_file.display_name
+                        );
+                        file.send_file(&mut conn).await?;
+                    }
+                }
                 break;
             }
         };

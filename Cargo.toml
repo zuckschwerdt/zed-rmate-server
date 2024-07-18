@@ -1,6 +1,6 @@
 [package]
 name = "zed-rmate-server"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Christian W. Zuckschwerdt <christian@zuckschwerdt.org>"]
 edition = "2021"
 
@@ -14,5 +14,5 @@ futures = "0.3"
 tokio = { version = "1.37", features = ["macros", "rt-multi-thread", "fs", "net", "io-util", "sync", "time"] }
 
 tempfile = "3"
-notify = "6"
+notify = { version = "6", default-features = false, features = ["macos_fsevent"] }
 async-process = "2.2.3"
