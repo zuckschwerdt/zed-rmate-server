@@ -1,8 +1,8 @@
 //! rmate server for Zed.
 //! CLI main.
 
-use tracing::Level;
-use tracing_subscriber::FmtSubscriber;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::EnvFilter;
 
 use clap::Parser;
 use dotenv::dotenv;
@@ -36,15 +36,17 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    // a builder for `FmtSubscriber`.
-    let subscriber = FmtSubscriber::builder()
-        // all spans/events with a level higher than TRACE (e.g, debug, info, warn, etc.)
-        // will be written to stdout.
-        .with_max_level(Level::INFO)
-        // completes the builder.
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    // SubscriberBuilder for configuring a formatting subscriber.
+    tracing_subscriber::fmt()
+        // Parsing an EnvFilter from the default environment variable (RUST_LOG)
+        .with_env_filter(
+            EnvFilter::builder()
+                // default to log all spans/events with a level of INFO or higher.
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy(),
+        )
+        // Install this Subscriber as the global default.
+        .init();
 
     dotenv().ok();
     let args = Args::parse();
