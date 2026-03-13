@@ -1,4 +1,4 @@
-# copy file to ~/.config/systemd/user/zed-rmate-server.service
+# Copy file to ~/.config/systemd/user/zed-rmate-server.service
 # Run `systemctl --user daemon-reload`
 # Enable by running `systemctl enable --now --user zed-rmate-server.service`
 
