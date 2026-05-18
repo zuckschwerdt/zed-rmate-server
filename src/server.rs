@@ -258,6 +258,10 @@ async fn handle_connection(stream: TcpStream, zed_bin: PathBuf) -> Result<(), st
                 }
                 break;
             }
+            res = conn.wait_for_close() => {
+                debug!("Remote connection closed: {res:#?}");
+                break;
+            }
         };
     }
 

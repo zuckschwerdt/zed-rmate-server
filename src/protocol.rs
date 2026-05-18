@@ -48,7 +48,11 @@ where
         let mut buf = String::new();
         loop {
             // Read an rmate command
-            let _n = self.stream.read_line(&mut buf).await?;
+            let n = self.stream.read_line(&mut buf).await?;
+            if n == 0 {
+                debug!("EOF reached while reading client command");
+                return Ok(None);
+            }
             debug!("Parsing {buf:#?} line");
 
             // Match command or skip empty lines and retry
@@ -80,6 +84,18 @@ where
     /// Send the server close command to the output stream.
     pub async fn close(&mut self) -> Result<(), Error> {
         self.stream.write_all("close\n".as_bytes()).await
+    }
+
+    /// Wait for the client to close the connection or send unexpected data.
+    pub async fn wait_for_close(&mut self) -> Result<(), Error> {
+        let mut buf = [0u8; 1];
+        let n = self.stream.read(&mut buf).await?;
+        if n == 0 {
+            // EOF
+            Ok(())
+        } else {
+            Err(Error::other("Unexpected data from client"))
+        }
     }
 }
 
@@ -123,7 +139,12 @@ impl RmateFile {
         debug!("Reading client open headers");
         loop {
             // Read key-value lines
-            let _ = reader.read_line(&mut buf).await?;
+            let n = reader.read_line(&mut buf).await?;
+            if n == 0 {
+                return Err(Error::other(
+                    "Unexpected EOF while parsing protocol headers",
+                ));
+            }
             debug!("Parsing {buf:#?} line");
             let (key, value) = buf
                 .split_once(": ")
